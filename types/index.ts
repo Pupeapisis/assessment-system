@@ -9,19 +9,12 @@ export interface User {
   created_at: string
 }
 
-export interface Category {
-  id: string
-  name: string
-}
-
 export interface Topic {
   id: string
-  category_id: string
   title: string
   description: string | null
   active: boolean
   sort_order: number
-  category?: Category
 }
 
 export interface Assessment {
@@ -39,7 +32,6 @@ export interface AssessmentResult {
   assessment_id: string
   topic_id: string
   comment: string | null
-  score: number | null
   topic?: Topic
   images?: AssessmentImage[]
 }

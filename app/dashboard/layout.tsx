@@ -7,6 +7,7 @@ const navItems = [
   { label: 'แดชบอร์ด', href: '/dashboard', icon: '📊' },
   { label: 'สร้างแบบประเมิน', href: '/dashboard/assessment', icon: '📝' },
   { label: 'จัดการหัวข้อ', href: '/dashboard/topics', icon: '📋' },
+  { label: 'จัดการสาขา', href: '/dashboard/branches', icon: '🏢' },
   { label: 'รายงาน', href: '/dashboard/report', icon: '📄' },
   { label: 'จัดการผู้ใช้', href: '/dashboard/users', icon: '👥' },
 ]

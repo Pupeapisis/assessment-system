@@ -1,47 +1,91 @@
 'use client'
-import { useEffect, useState } from 'react'
+
+import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
+interface User {
+  id: string
+  name: string
+  email: string
+  role: string
+  created_at?: string
+}
+
 export default function UsersPage() {
-  const [users, setUsers] = useState<any[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'assessor' })
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'assessor',
+  })
   const [loading, setLoading] = useState(false)
+
   const supabase = createClient()
 
-  const fetchUsers = async () => {
-    const { data } = await supabase.from('users').select('*').order('created_at')
-    setUsers(data || [])
-  }
+  const fetchUsers = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at')
 
-  useEffect(() => { fetchUsers() }, [])
+    if (error) {
+      toast.error('ไม่สามารถโหลดข้อมูลผู้ใช้ได้')
+      return
+    }
+
+    setUsers(data || [])
+  }, [supabase])
+
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers])
 
   const handleAdd = async () => {
     if (!form.name || !form.email || !form.password) {
       toast.error('กรุณากรอกข้อมูลให้ครบ')
       return
     }
+
     setLoading(true)
+
     try {
       const { data, error } = await supabase.auth.admin.createUser({
         email: form.email,
         password: form.password,
         email_confirm: true,
       })
+
       if (error) throw error
+
       await supabase.from('users').insert({
         id: data.user.id,
         name: form.name,
         email: form.email,
         role: form.role,
       })
+
       toast.success('เพิ่มผู้ใช้สำเร็จ')
+
       setShowModal(false)
-      setForm({ name: '', email: '', password: '', role: 'assessor' })
-      fetchUsers()
-    } catch (err: any) {
-      toast.error(err.message || 'เกิดข้อผิดพลาด')
+
+      setForm({
+        name: '',
+        email: '',
+        password: '',
+        role: 'assessor',
+      })
+
+      await fetchUsers()
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'เกิดข้อผิดพลาด'
+
+      toast.error(message)
     } finally {
       setLoading(false)
     }
@@ -49,9 +93,15 @@ export default function UsersPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('ยืนยันการลบผู้ใช้นี้?')) return
-    await supabase.from('users').delete().eq('id', id)
+
+    await supabase
+      .from('users')
+      .delete()
+      .eq('id', id)
+
     toast.success('ลบผู้ใช้สำเร็จ')
-    fetchUsers()
+
+    await fetchUsers()
   }
 
   const roleLabel: Record<string, string> = {
