@@ -6,7 +6,33 @@ import toast from 'react-hot-toast'
 // ============================================================
 // TYPES
 // ============================================================
-type SubItemType = 'checkbox' | 'trip' | 'equipment_detail'
+type SubItemType =
+  | 'checkbox'
+  | 'trip'
+  | 'equipment_detail'
+  | 'door'
+  | 'door_inspection'
+  | 'socket_inspection'
+  | 'sanitary_inspection'
+  | 'emergency_inspection'
+  | 'lighting_inspection'
+  | 'fan'
+  | 'fan_inspection'
+  | 'fire_extinguisher_inspection'
+  | 'exit_sign'
+  | 'exit_sign_inspection'
+
+// setup fields แต่ละ type (label ที่แสดงบน input)
+const SETUP_FIELDS: Partial<Record<SubItemType, string[]>> = {
+  door_inspection:               ['ชื่อหัวข้อย่อย'],
+  socket_inspection:             ['ชื่อหัวข้อย่อย'],
+  sanitary_inspection:           ['ชื่อหัวข้อย่อย'],
+  emergency_inspection:          ['ชื่อหัวข้อย่อย', 'อุปกรณ์'],
+  lighting_inspection:           ['ชื่อหัวข้อย่อย', 'ชนิดโคมไฟ'],
+  fan_inspection:                ['ชื่อหัวข้อย่อย', 'อุปกรณ์', 'หมายเลขเครื่อง'],
+  fire_extinguisher_inspection:  ['ชื่อหัวข้อย่อย', 'หมายเลขถัง', 'ประเภท', 'ขนาด'],
+  exit_sign_inspection:          ['ชื่อหัวข้อย่อย', 'อุปกรณ์'],
+}
 
 interface SubItem {
   id: string
@@ -20,6 +46,7 @@ interface BranchConfig {
   id: string
   topic_id: string
   branch_id: string
+  building: string | null
   equipment_no: string | null
   location: string | null
   branch?: { name: string }
@@ -43,24 +70,142 @@ const SUB_TYPE_LABEL: Record<SubItemType, string> = {
   checkbox: 'Checkbox (ปกติ/ไม่ปกติ)',
   trip: 'รายละเอียด (แรงดันไฟฟ้า)',
   equipment_detail: 'รายละเอียด (อุปกรณ์)',
-}
-
-const SUB_TYPE_ICON: Record<SubItemType, string> = {
-  checkbox: '✓',
-  trip: '⚡',
-  equipment_detail: '🔩',
+  door: 'ประตู',
+  door_inspection: 'การตรวจประตู',
+  socket_inspection: 'การตรวจเต้ารับไฟฟ้า',
+  sanitary_inspection: 'การตรวจสุขภัณฑ์',
+  emergency_inspection: 'การตรวจ Emergency',
+  lighting_inspection: 'การตรวจแสงสว่าง',
+  fan: 'พัดลม',
+  fan_inspection: 'การตรวจพัดลม',
+  fire_extinguisher_inspection: 'การตรวจถังดับเพลิง',
+  exit_sign: 'Emergency/Exit Sign',
+  exit_sign_inspection: 'การตรวจ Emergency/Exit Sign',
 }
 
 const SUB_TYPE_COLOR: Record<SubItemType, string> = {
   checkbox: 'bg-green-50 text-green-700',
   trip: 'bg-blue-50 text-blue-700',
   equipment_detail: 'bg-orange-50 text-orange-700',
+  door: 'bg-purple-50 text-purple-700',
+  door_inspection: 'bg-purple-50 text-purple-700',
+  socket_inspection: 'bg-yellow-50 text-yellow-700',
+  sanitary_inspection: 'bg-cyan-50 text-cyan-700',
+  emergency_inspection: 'bg-red-50 text-red-700',
+  lighting_inspection: 'bg-amber-50 text-amber-700',
+  fan: 'bg-sky-50 text-sky-700',
+  fan_inspection: 'bg-sky-50 text-sky-700',
+  fire_extinguisher_inspection: 'bg-rose-50 text-rose-700',
+  exit_sign: 'bg-indigo-50 text-indigo-700',
+  exit_sign_inspection: 'bg-indigo-50 text-indigo-700',
 }
 
-const SUB_TYPE_PREVIEW: Record<SubItemType, string> = {
-  checkbox: '☐ ปกติ  ☐ ไม่ปกติ | ค่ามาตรฐาน | ค่าที่วัดได้ | คำแนะนำ',
-  trip: 'ค่าที่วัดได้: __________',
-  equipment_detail: 'Main Circuit / ชนิดสายไฟ / ขนาดสายเฟส / ขนาดสายนิวทรัล',
+// type ที่ต้องการ label เดียวจาก user (เดิม)
+const NEEDS_LABEL: SubItemType[] = ['checkbox', 'trip', 'equipment_detail']
+
+// Preview content
+const SUB_TYPE_PREVIEW_CONTENT: Record<SubItemType, React.ReactNode> = {
+  checkbox: <div className="text-xs text-gray-400">ค่ามาตรฐาน | ค่าที่วัดได้ | ☐ ปกติ | ☐ ไม่ปกติ | คำแนะนำ</div>,
+  trip: <div className="text-xs text-gray-400">ค่าที่วัดได้: __________</div>,
+  equipment_detail: <div className="space-y-0.5 text-xs text-gray-400">
+    <div>Main Circuit: __________</div>
+    <div>ชนิดสายไฟ: __________</div>
+    <div>ขนาดสายเฟส (Sq.mm.): __________</div>
+    <div>ขนาดสายนิวทรัล (Sq.mm.): __________</div>
+  </div>,
+  door: <div className="space-y-1 text-xs text-gray-400">
+    <div>☐ ประตูสำนักงาน &nbsp;&nbsp;☐ ประตูหนีไฟ</div>
+  </div>,
+  door_inspection: <div className="space-y-0.5 text-xs text-gray-400">
+    <div>☐ ตรวจสอบฐานล่างประตู (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ตรวจสอบเสาข้างประตู (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ตรวจสอบบานพับประตู (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ตรวจสอบโช๊คประตูหนีไฟ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ตรวจสอบคานผลักประตู (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ทำความสะอาด (ผ่าน/ไม่ผ่าน)</div>
+    <div>คำแนะนำและการแก้ไข: __________</div>
+  </div>,
+  socket_inspection: <div className="space-y-0.5 text-xs text-gray-400">
+    <div>☐ ตรวจสอบสภาพเต้ารับ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ตรวจสอบสภาพบล็อคยึดเต้ารับ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ตรวจสอบสภาพสายไฟก่อนเข้าเต้ารับ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ตรวจสอบจุดเชื่อมต่อระหว่างบล็อคและท่อร้อยสาย (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ตรวจสอบสายดิน (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ทำความสะอาด (ผ่าน/ไม่ผ่าน)</div>
+    <div>คำแนะนำและการแก้ไข: __________</div>
+  </div>,
+  sanitary_inspection: <div className="space-y-0.5 text-xs text-gray-400">
+    <div>☐ ตรวจสอบสภาพสุขภัณฑ์ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ฟลัชวาล์ว (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ข้อต่อท่อน้ำดี (ปกติ/ไม่ปกติ)</div>
+    <div>☐ รอยรั่วซึมและยางกันซึม (ปกติ/ไม่ปกติ)</div>
+    <div>☐ การทำงานของลูกลอย (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ถังเก็บน้ำและยาแนว (ปกติ/ไม่ปกติ)</div>
+    <div>☐ การไหลของน้ำในระบบ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ กลิ่นบริเวณรอบๆ (มีกลิ่น/ไม่มีกลิ่น)</div>
+    <div>☐ การยึดและทดสอบความแข็งแรง (ปกติ/ไม่ปกติ)</div>
+    <div>คำแนะนำและการแก้ไข: __________</div>
+  </div>,
+  emergency_inspection: <div className="space-y-0.5 text-xs text-gray-400">
+    <div className="font-medium text-gray-500">บันทึกค่าตามจริง:</div>
+    <div>แหล่งจ่ายไฟ AC Emergency Light (220V): __________</div>
+    <div className="font-medium text-gray-500 mt-1">ตรวจสภาพ:</div>
+    <div>☐ สภาวะการ Charging (หลอดดับ/กระพริบ) (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ค่าที่ Charging ได้ (หลอดแสดง Full) (ปกติ/ไม่ปกติ)</div>
+    <div>☐ Test Battery ไปหลอด 5 วินาที (ปกติ/ไม่ปกติ)</div>
+    <div>☐ สภาพการชำรุด/LED (ปกติ/ไม่ปกติ)</div>
+    <div>☐ สภาพการชำรุด/ฟิวส์ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ สภาพการชำรุด/หลอดไฟ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ทดสอบเปิดต่อเนื่อง 90 นาที (ปกติ/ไม่ปกติ)</div>
+    <div>คำแนะนำและแนวทางแก้ไข: __________</div>
+  </div>,
+  lighting_inspection: <div className="space-y-0.5 text-xs text-gray-400">
+    <div>☐ สภาพความสมบูรณ์ของโคมไฟฟ้า (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ขั้วรับหลอด (ปกติ/ไม่ปกติ)</div>
+    <div>☐ สภาพหลอดไฟฟ้า (ปกติ/ไม่ปกติ)</div>
+    <div>☐ บล็อคและสวิตช์ควบคุม (ปกติ/ไม่ปกติ)</div>
+    <div>☐ การติดตั้งโคมไฟ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ค่าความสว่างภายในห้อง (ปกติ/ไม่ปกติ)</div>
+    <div>คำแนะนำและการแก้ไข: __________</div>
+  </div>,
+  fan: <div className="space-y-1 text-xs text-gray-400">
+    <div>☐ พัดลมโคจร &nbsp;&nbsp;☐ พัดลมติดผนัง &nbsp;&nbsp;☐ พัดลมระบายอากาศ</div>
+  </div>,
+  fan_inspection: <div className="space-y-0.5 text-xs text-gray-400">
+    <div className="font-medium text-gray-500">บันทึกค่าตามจริง:</div>
+    <div>กระแสมอเตอร์ (A): __________</div>
+    <div>แรงดันไฟฟ้า (220/380) (V): __________</div>
+    <div className="font-medium text-gray-500 mt-1">ตรวจสภาพ:</div>
+    <div>☐ การทำงานของพัดลม (ปกติ/ไม่ปกติ)</div>
+    <div>☐ สภาพสายไฟและใบพัดลม (ปกติ/ไม่ปกติ)</div>
+    <div>☐ การสั่นสะเทือนของมอเตอร์ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ไขน็อตให้แน่นและทำความสะอาด (ผ่าน/ไม่ผ่าน)</div>
+    <div>คำแนะนำและการแก้ไข: __________</div>
+  </div>,
+  fire_extinguisher_inspection: <div className="space-y-0.5 text-xs text-gray-400">
+    <div>☐ สายฉีด (ปกติ/ไม่ปกติ)</div>
+    <div>☐ คันบังคับ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ตัวถัง (ปกติ/ไม่ปกติ)</div>
+    <div>☐ เกจความดัน/น้ำหนัก (ปกติ/ไม่ปกติ)</div>
+    <div>☐ สิ่งกีดขวาง (ปกติ/ไม่ปกติ)</div>
+    <div>คำแนะนำและการแก้ไข: __________</div>
+  </div>,
+  exit_sign: <div className="space-y-1 text-xs text-gray-400">
+    <div>☐ ตู้ไฟแสงสว่างฉุกเฉิน &nbsp;&nbsp;☐ ป้ายบอกทางหนีไฟ</div>
+  </div>,
+  exit_sign_inspection: <div className="space-y-0.5 text-xs text-gray-400">
+    <div className="font-medium text-gray-500">บันทึกค่าตามจริง:</div>
+    <div>แหล่งจ่ายไฟ AC Emergency Light (220V): __________</div>
+    <div className="font-medium text-gray-500 mt-1">ตรวจสภาพ:</div>
+    <div>☐ สภาวะการ Charging (หลอดดับ/กระพริบ) (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ค่าที่ Charging ได้ (หลอดแสดง Full) (ปกติ/ไม่ปกติ)</div>
+    <div>☐ Test Battery ไปหลอด 5 วินาที (ปกติ/ไม่ปกติ)</div>
+    <div>☐ LED (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ฟิวส์ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ หลอดไฟ (ปกติ/ไม่ปกติ)</div>
+    <div>☐ ทดสอบเปิดต่อเนื่อง 90 นาที (ปกติ/ไม่ปกติ)</div>
+    <div>คำแนะนำและการแก้ไข: __________</div>
+  </div>,
 }
 
 // ============================================================
@@ -77,15 +222,31 @@ export default function TopicsPage() {
 
   const [editingTopic, setEditingTopic] = useState<Topic | null>(null)
   const [activeTopic, setActiveTopic] = useState<Topic | null>(null)
+  const [editingConfig, setEditingConfig] = useState<BranchConfig | null>(null)
 
   const [topicForm, setTopicForm] = useState({ title: '', description: '' })
-  const [subForm, setSubForm] = useState<{ label: string; type: SubItemType }>({ label: '', type: 'checkbox' })
-  const [configForm, setConfigForm] = useState({ branch_id: '', equipment_no: '', location: '' })
+
+  // subForm: label สำหรับ NEEDS_LABEL, setupFields สำหรับ type ใหม่
+  const [subForm, setSubForm] = useState<{
+    label: string
+    type: SubItemType
+    setupFields: Record<string, string>
+  }>({ label: '', type: 'checkbox', setupFields: {} })
+
+  const [configForm, setConfigForm] = useState({ branch_id: '', building: '', equipment_no: '', location: '' })
 
   const [subItems, setSubItems] = useState<SubItem[]>([])
   const [branchConfigs, setBranchConfigs] = useState<BranchConfig[]>([])
 
   const supabase = createClient()
+
+  // reset setupFields เมื่อเปลี่ยน type
+  const handleTypeChange = (type: SubItemType) => {
+    const fields = SETUP_FIELDS[type] || []
+    const setupFields: Record<string, string> = {}
+    fields.forEach(f => { setupFields[f] = '' })
+    setSubForm({ label: '', type, setupFields })
+  }
 
   // ── FETCH ──
   const fetchAll = async () => {
@@ -146,25 +307,49 @@ export default function TopicsPage() {
     setActiveTopic(t)
     const { data } = await supabase.from('topic_sub_items').select('*').eq('topic_id', t.id).order('sort_order')
     setSubItems(data || [])
-    setSubForm({ label: '', type: 'checkbox' })
+    setSubForm({ label: '', type: 'checkbox', setupFields: {} })
     setShowSubModal(true)
   }
 
   const handleAddSubItem = async () => {
-    // equipment_detail ไม่ต้องการ label จาก user เพราะ fixed fields
-    if (subForm.type !== 'equipment_detail' && !subForm.label.trim()) {
-      toast.error('กรุณาระบุชื่อหัวข้อย่อย'); return
-    }
     if (!activeTopic) return
+
+    // validate
+    if (NEEDS_LABEL.includes(subForm.type)) {
+      if (!subForm.label.trim()) { toast.error('กรุณาระบุชื่อหัวข้อย่อย'); return }
+    } else if (SETUP_FIELDS[subForm.type]) {
+      const fields = SETUP_FIELDS[subForm.type]!
+      for (const f of fields) {
+        if (!subForm.setupFields[f]?.trim()) {
+          toast.error(`กรุณาระบุ${f}`); return
+        }
+      }
+    }
+
+    // label ที่แสดงใน list — ใช้ field แรก (ชื่อหัวข้อย่อย) ถ้ามี
+    const fields = SETUP_FIELDS[subForm.type]
+    const label = NEEDS_LABEL.includes(subForm.type)
+      ? subForm.label
+      : fields && fields.length > 0
+        ? subForm.setupFields[fields[0]] || SUB_TYPE_LABEL[subForm.type]
+        : SUB_TYPE_LABEL[subForm.type]
+
+    // extra_data เก็บ setupFields ทั้งหมด
+    const extra_data = fields && fields.length > 0 ? subForm.setupFields : null
+
     const { error } = await supabase.from('topic_sub_items').insert({
       topic_id: activeTopic.id,
-      label: subForm.type === 'equipment_detail' ? 'รายละเอียด (อุปกรณ์)' : subForm.label,
+      label,
       type: subForm.type,
       sort_order: subItems.length,
+      ...(extra_data ? { extra_data } : {}),
     })
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return }
     toast.success('เพิ่มหัวข้อย่อยสำเร็จ')
-    setSubForm(p => ({ ...p, label: '' }))
+
+    // reset
+    handleTypeChange(subForm.type)
+
     const { data } = await supabase.from('topic_sub_items').select('*').eq('topic_id', activeTopic.id).order('sort_order')
     setSubItems(data || [])
   }
@@ -181,9 +366,14 @@ export default function TopicsPage() {
   // ── BRANCH CONFIG CRUD ──
   const openConfig = async (t: Topic) => {
     setActiveTopic(t)
-    const { data } = await supabase.from('topic_branch_config').select('*, branch:branches(name)').eq('topic_id', t.id)
+    const { data } = await supabase
+      .from('topic_branch_config')
+      .select('*, branch:branches(name)')
+      .eq('topic_id', t.id)
+    console.log('TOPIC', t.title)
+    console.log('CONFIGS', data)
     setBranchConfigs(data || [])
-    setConfigForm({ branch_id: branches[0]?.id || '', equipment_no: '', location: '' })
+    setConfigForm({ branch_id: branches[0]?.id || '', building: '', equipment_no: '', location: '' })
     setShowConfigModal(true)
   }
 
@@ -192,12 +382,14 @@ export default function TopicsPage() {
     const { error } = await supabase.from('topic_branch_config').upsert({
       topic_id: activeTopic.id,
       branch_id: configForm.branch_id,
+      building: configForm.building || null,
       equipment_no: configForm.equipment_no || null,
       location: configForm.location || null,
     }, { onConflict: 'topic_id,branch_id' })
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return }
     toast.success('บันทึก config สำเร็จ')
-    setConfigForm({ branch_id: branches[0]?.id || '', equipment_no: '', location: '' })
+    setConfigForm({ branch_id: branches[0]?.id || '', building: '', equipment_no: '', location: '' })
+    setEditingConfig(null)
     const { data } = await supabase.from('topic_branch_config').select('*, branch:branches(name)').eq('topic_id', activeTopic.id)
     setBranchConfigs(data || [])
     fetchAll()
@@ -291,7 +483,9 @@ export default function TopicsPage() {
       {showConfigModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-sm font-medium text-gray-900 mb-1">ตั้งค่าสาขา</h2>
+            <h2 className="text-sm font-medium text-gray-900 mb-1">
+              {editingConfig ? `✏️ แก้ไข Config : ${editingConfig.branch?.name || ''}` : 'ตั้งค่าสาขา'}
+            </h2>
             <p className="text-xs text-gray-400 mb-4">{activeTopic?.title}</p>
             <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-3">
               <div>
@@ -302,33 +496,64 @@ export default function TopicsPage() {
                 </select>
               </div>
               <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">อาคาร</label>
+                <input type="text" value={configForm.building}
+                  onChange={e => setConfigForm(p => ({ ...p, building: e.target.value }))}
+                  placeholder="เช่น อาคาร A"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white" />
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">หมายเลขอุปกรณ์</label>
-                <input type="text" value={configForm.equipment_no} onChange={e => setConfigForm(p => ({ ...p, equipment_no: e.target.value }))}
+                <input type="text" value={configForm.equipment_no}
+                  onChange={e => setConfigForm(p => ({ ...p, equipment_no: e.target.value }))}
                   placeholder="เช่น MB245-789"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">สถานที่</label>
-                <input type="text" value={configForm.location} onChange={e => setConfigForm(p => ({ ...p, location: e.target.value }))}
+                <input type="text" value={configForm.location}
+                  onChange={e => setConfigForm(p => ({ ...p, location: e.target.value }))}
                   placeholder="เช่น ห้องประชุม"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white" />
               </div>
-              <button onClick={handleSaveConfig} className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium">
-                + เพิ่ม / อัปเดต config
-              </button>
+              <div className="flex gap-2">
+                {editingConfig && (
+                  <button
+                    onClick={() => {
+                      setEditingConfig(null)
+                      setConfigForm({ branch_id: branches[0]?.id || '', building: '', equipment_no: '', location: '' })
+                    }}
+                    className="px-4 border border-gray-300 text-gray-600 rounded-lg py-2 text-sm"
+                  >ยกเลิก</button>
+                )}
+                <button onClick={handleSaveConfig} className="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm font-medium">
+                  {editingConfig ? '💾 บันทึกการแก้ไข' : '+ เพิ่ม / อัปเดต Config'}
+                </button>
+              </div>
             </div>
             {branchConfigs.length > 0 && (
               <div>
                 <div className="text-xs font-medium text-gray-500 mb-2">สาขาที่ตั้งค่าแล้ว</div>
                 <div className="space-y-2">
                   {branchConfigs.map(c => (
-                    <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
-                      <div>
+                    <div key={c.id}
+                      className={`flex items-center justify-between p-3 rounded-xl border ${editingConfig?.id === c.id ? 'bg-blue-50 border-blue-300' : 'bg-gray-50 border-gray-100'}`}>
+                      <div className="flex flex-col">
                         <span className="text-xs font-medium text-blue-600">{c.branch?.name}</span>
-                        {c.equipment_no && <span className="text-xs text-gray-400 ml-2">🔧 {c.equipment_no}</span>}
-                        {c.location && <span className="text-xs text-gray-400 ml-2">📍 {c.location}</span>}
+                        {c.equipment_no && <span className="text-xs text-gray-400">🔧 {c.equipment_no}</span>}
+                        {c.building && <span className="text-xs text-gray-400">🏢 {c.building}</span>}
+                        {c.location && <span className="text-xs text-gray-400">📍 {c.location}</span>}
                       </div>
-                      <button onClick={() => handleDeleteConfig(c.id)} className="text-xs text-red-400 hover:text-red-600">ลบ</button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingConfig(c)
+                            setConfigForm({ branch_id: c.branch_id, building: c.building || '', equipment_no: c.equipment_no || '', location: c.location || '' })
+                          }}
+                          className="text-xs px-2 py-1 border border-blue-200 text-blue-600 rounded">แก้ไข</button>
+                        <button onClick={() => handleDeleteConfig(c.id)}
+                          className="text-xs px-2 py-1 border border-red-200 text-red-600 rounded">ลบ</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -347,48 +572,71 @@ export default function TopicsPage() {
             <p className="text-xs text-gray-400 mb-4">{activeTopic?.title}</p>
 
             <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-3">
+              {/* dropdown ประเภท */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">ประเภท</label>
                 <select value={subForm.type}
-                  onChange={e => setSubForm({ label: '', type: e.target.value as SubItemType })}
+                  onChange={e => handleTypeChange(e.target.value as SubItemType)}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white">
                   <option value="checkbox">✓ Checkbox (ปกติ/ไม่ปกติ)</option>
                   <option value="trip">⚡ รายละเอียด (แรงดันไฟฟ้า)</option>
                   <option value="equipment_detail">🔩 รายละเอียด (อุปกรณ์)</option>
+                  <option disabled>──────────────</option>
+                  <option value="door">🚪 ประตู</option>
+                  <option value="door_inspection">🚪 การตรวจประตู</option>
+                  <option value="socket_inspection">🔌 การตรวจเต้ารับไฟฟ้า</option>
+                  <option value="sanitary_inspection">🚿 การตรวจสุขภัณฑ์</option>
+                  <option value="emergency_inspection">🔦 การตรวจ Emergency</option>
+                  <option value="lighting_inspection">💡 การตรวจแสงสว่าง</option>
+                  <option value="fan">🌀 พัดลม</option>
+                  <option value="fan_inspection">🌀 การตรวจพัดลม</option>
+                  <option value="fire_extinguisher_inspection">🧯 การตรวจถังดับเพลิง</option>
+                  <option value="exit_sign">🚨 Emergency/Exit Sign</option>
+                  <option value="exit_sign_inspection">🚨 การตรวจ Emergency/Exit Sign</option>
                 </select>
               </div>
 
-              {/* ชื่อหัวข้อย่อย — ซ่อนสำหรับ equipment_detail เพราะ fixed */}
-              {subForm.type !== 'equipment_detail' && (
+              {/* input เดียว สำหรับ checkbox, trip, equipment_detail */}
+              {NEEDS_LABEL.includes(subForm.type) && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">ชื่อหัวข้อย่อย</label>
                   <input type="text" value={subForm.label}
                     onChange={e => setSubForm(p => ({ ...p, label: e.target.value }))}
-                    placeholder={subForm.type === 'checkbox' ? 'เช่น ตรวจสอบสภาพภายนอก' : 'เช่น CB, L1-N, L2-N'}
+                    placeholder={
+                      subForm.type === 'checkbox' ? 'เช่น ตรวจสอบสภาพภายนอก' :
+                      subForm.type === 'trip' ? 'เช่น CB, L1-N, L2-N' :
+                      'เช่น Main Circuit, ชนิดสายไฟ'
+                    }
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white"
                     onKeyDown={e => e.key === 'Enter' && handleAddSubItem()} />
+                </div>
+              )}
+
+              {/* input หลายช่อง สำหรับ type ใหม่ที่มี SETUP_FIELDS */}
+              {SETUP_FIELDS[subForm.type] && (
+                <div className="space-y-2">
+                  {SETUP_FIELDS[subForm.type]!.map(fieldLabel => (
+                    <div key={fieldLabel}>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">{fieldLabel}</label>
+                      <input
+                        type="text"
+                        value={subForm.setupFields[fieldLabel] || ''}
+                        onChange={e => setSubForm(p => ({
+                          ...p,
+                          setupFields: { ...p.setupFields, [fieldLabel]: e.target.value }
+                        }))}
+                        placeholder={`ระบุ${fieldLabel}`}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white"
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
 
               {/* Preview */}
               <div className="border border-dashed border-gray-200 rounded-lg p-3 bg-white">
                 <div className="text-xs font-medium text-gray-400 mb-2">ช่องที่จะแสดงตอนตรวจจริง:</div>
-                {subForm.type === 'checkbox' && (
-                  <div className="space-y-0.5 text-xs text-gray-400">
-                    <div>ค่ามาตรฐาน | ค่าที่วัดได้ | ☐ ปกติ | ☐ ไม่ปกติ | คำแนะนำ</div>
-                  </div>
-                )}
-                {subForm.type === 'trip' && (
-                  <div className="text-xs text-gray-400">ค่าที่วัดได้: __________</div>
-                )}
-                {subForm.type === 'equipment_detail' && (
-                  <div className="space-y-0.5 text-xs text-gray-400">
-                    <div>Main Circuit: __________</div>
-                    <div>ชนิดสายไฟ: __________</div>
-                    <div>ขนาดสายเฟส (Sq.mm.): __________</div>
-                    <div>ขนาดสายนิวทรัล (Sq.mm.): __________</div>
-                  </div>
-                )}
+                {SUB_TYPE_PREVIEW_CONTENT[subForm.type]}
               </div>
 
               <button onClick={handleAddSubItem} className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium">
@@ -403,11 +651,10 @@ export default function TopicsPage() {
                   {subItems.map((s, idx) => (
                     <div key={s.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
                       <div className="flex items-start gap-2 flex-1">
-                        <span className="text-sm mt-0.5 w-5 text-center">{SUB_TYPE_ICON[s.type]}</span>
                         <div>
                           <div className="text-xs font-medium text-gray-900">{idx + 1}. {s.label}</div>
-                          <span className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block ${SUB_TYPE_COLOR[s.type]}`}>
-                            {SUB_TYPE_LABEL[s.type]}
+                          <span className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block ${SUB_TYPE_COLOR[s.type] ?? 'bg-gray-50 text-gray-600'}`}>
+                            {SUB_TYPE_LABEL[s.type] ?? s.type}
                           </span>
                         </div>
                       </div>

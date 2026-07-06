@@ -1,0 +1,13 @@
+
+> assessment-system@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://10.0.1.129:3000
+- Environments: .env.local
+✓ Ready in 756ms
+⚠ Slow filesystem detected. The benchmark took 423ms. If /workspaces/assessment-system/.next/dev is a network drive, consider moving it to a local folder.
+See more: https://nextjs.org/docs/app/guides/local-development
+
+[?25h

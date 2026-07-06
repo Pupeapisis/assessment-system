@@ -6,17 +6,24 @@ import toast from 'react-hot-toast'
 // ============================================================
 // TYPES
 // ============================================================
-type SubItemType = 'checkbox' | 'trip' | 'equipment_detail'
+type SubItemType =
+  | 'checkbox' | 'trip' | 'equipment_detail'
+  | 'door' | 'door_inspection' | 'socket_inspection'
+  | 'sanitary_inspection' | 'emergency_inspection' | 'lighting_inspection'
+  | 'fan' | 'fan_inspection' | 'fire_extinguisher_inspection'
+  | 'exit_sign' | 'exit_sign_inspection'
 
 interface SubItem {
   id: string
   label: string
   type: SubItemType
   sort_order: number
+  extra_data?: Record<string, string> | null
 }
 
 interface BranchConfig {
   branch_id: string
+  building: string | null
   equipment_no: string | null
   location: string | null
 }
@@ -29,10 +36,7 @@ interface Topic {
   sub_items?: SubItem[]
 }
 
-interface Branch {
-  id: string
-  name: string
-}
+interface Branch { id: string; name: string }
 
 type SubValues = Record<string, Record<string, {
   status?: 'normal' | 'abnormal'
@@ -41,13 +45,64 @@ type SubValues = Record<string, Record<string, {
   recommendation?: string
 }>>
 
-// equipment_detail values per topic
 type EquipmentValues = Record<string, {
   main_circuit?: string
   cable_type?: string
   phase_size?: string
   neutral_size?: string
 }>
+
+// extra values สำหรับ type ใหม่ — topicId → subItemId → fieldKey → value
+type ExtraValues = Record<string, Record<string, Record<string, string>>>
+
+// ============================================================
+// HELPERS: render ฟอร์มตาม type
+// ============================================================
+function CheckboxStatusField({
+  label, fieldKey, value, onChange, passLabel = 'ปกติ', failLabel = 'ไม่ปกติ',
+}: {
+  label: string; fieldKey: string; value: string; onChange: (v: string) => void
+  passLabel?: string; failLabel?: string
+}) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-700 flex-1 pr-2">{label}</span>
+      <div className="flex gap-2 flex-shrink-0">
+        <label className="flex items-center gap-1 cursor-pointer">
+          <input type="radio" name={fieldKey} checked={value === 'normal' || value === ''}
+            onChange={() => onChange('normal')} className="accent-blue-600" />
+          <span className="text-xs text-green-700">{passLabel}</span>
+        </label>
+        <label className="flex items-center gap-1 cursor-pointer">
+          <input type="radio" name={fieldKey} checked={value === 'abnormal'}
+            onChange={() => onChange('abnormal')} className="accent-red-500" />
+          <span className="text-xs text-red-600">{failLabel}</span>
+        </label>
+      </div>
+    </div>
+  )
+}
+
+function MeasuredField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-700 flex-1">{label}</span>
+      <input type="text" value={value} onChange={e => onChange(e.target.value)}
+        placeholder="กรอกค่า"
+        className="w-28 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400" />
+    </div>
+  )
+}
+
+function BoolCheckField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0 cursor-pointer">
+      <input type="checkbox" checked={value === 'true'} onChange={e => onChange(e.target.checked ? 'true' : 'false')}
+        className="w-4 h-4 accent-blue-600" />
+      <span className="text-xs text-gray-700">{label}</span>
+    </label>
+  )
+}
 
 // ============================================================
 // COMPONENT
@@ -65,6 +120,7 @@ export default function AssessmentPage() {
   const [remarks, setRemarks] = useState<Record<string, string>>({})
   const [subValues, setSubValues] = useState<SubValues>({})
   const [equipValues, setEquipValues] = useState<EquipmentValues>({})
+  const [extraValues, setExtraValues] = useState<ExtraValues>({})
   const [images, setImages] = useState<Record<string, File[]>>({})
   const [previews, setPreviews] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(false)
@@ -87,7 +143,6 @@ export default function AssessmentPage() {
         const { data } = await supabase.from('users').select('name').eq('id', user.id).single()
         if (data) setInspectorName(data.name)
 
-        // โหลด draft ล่าสุด (ถ้ามี)
         const { data: latestDraft } = await supabase
           .from('assessments')
           .select('*')
@@ -96,7 +151,7 @@ export default function AssessmentPage() {
           .order('updated_at', { ascending: false })
           .limit(1)
           .single()
-        
+
         if (latestDraft && latestDraft.form_data) {
           try {
             const formData = JSON.parse(latestDraft.form_data)
@@ -109,13 +164,10 @@ export default function AssessmentPage() {
             setRemarks(formData.remarks || {})
             setSubValues(formData.subValues || {})
             setEquipValues(formData.equipValues || {})
-            if (formData.selectedTopics) {
-              setSelected(new Set(formData.selectedTopics))
-            }
+            setExtraValues(formData.extraValues || {})
+            if (formData.selectedTopics) setSelected(new Set(formData.selectedTopics))
             toast.success('โหลด Draft ก่อนหน้าแล้ว ✓')
-          } catch (e) {
-            console.error('Error parsing draft:', e)
-          }
+          } catch (e) { console.error('Error parsing draft:', e) }
         }
       }
     }
@@ -132,7 +184,7 @@ export default function AssessmentPage() {
         .order('sort_order')
       const filtered = (data || []).filter((t: Topic) => t.configs?.some(c => c.branch_id === branchId))
       setTopics(filtered)
-      setSelected(new Set())
+      setSelected(prev => prev.size > 0 ? prev : new Set(filtered.map(t => t.id)))
     }
     fetchTopics()
   }, [branchId])
@@ -144,11 +196,7 @@ export default function AssessmentPage() {
     t.configs?.find(c => c.branch_id === branchId)
 
   const toggleTopic = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
   const updateSubValue = (topicId: string, subId: string, field: string, value: string) => {
@@ -159,11 +207,22 @@ export default function AssessmentPage() {
   }
 
   const updateEquipValue = (topicId: string, field: keyof EquipmentValues[string], value: string) => {
-    setEquipValues(prev => ({
+    setEquipValues(prev => ({ ...prev, [topicId]: { ...prev[topicId], [field]: value } }))
+  }
+
+  // update extra values สำหรับ type ใหม่
+  const updateExtra = (topicId: string, subId: string, field: string, value: string) => {
+    setExtraValues(prev => ({
       ...prev,
-      [topicId]: { ...prev[topicId], [field]: value },
+      [topicId]: {
+        ...prev[topicId],
+        [subId]: { ...prev[topicId]?.[subId], [field]: value },
+      },
     }))
   }
+
+  const getExtra = (topicId: string, subId: string, field: string): string =>
+    extraValues[topicId]?.[subId]?.[field] || ''
 
   const handleImageChange = (topicId: string, files: FileList | null) => {
     if (!files) return
@@ -181,14 +240,9 @@ export default function AssessmentPage() {
   }
 
   const resetForm = () => {
-    setStep(1)
-    setSelected(new Set())
-    setComments({})
-    setRemarks({})
-    setSubValues({})
-    setEquipValues({})
-    setImages({})
-    setPreviews({})
+    setStep(1); setSelected(new Set()); setComments({}); setRemarks({})
+    setSubValues({}); setEquipValues({}); setExtraValues({})
+    setImages({}); setPreviews({})
   }
 
   // ============================================================
@@ -197,83 +251,41 @@ export default function AssessmentPage() {
   const saveDraft = async (isDraft = true) => {
     if (!branchId) { toast.error('กรุณาเลือกสาขา'); return }
     if (selected.size === 0) { toast.error('กรุณาเลือกหัวข้ออย่างน้อย 1 หัวข้อ'); return }
-    
-    setSaveStatus('saving')
-    setIsSaving(true)
+    setSaveStatus('saving'); setIsSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('ไม่พบข้อมูลผู้ใช้')
-
       const branch = branches.find(b => b.id === branchId)
-      
-      // สร้างหรืออัปเดต draft
+      const formData = JSON.stringify({
+        inspectorName, inspectDate, inspectTime,
+        selectedTopics: Array.from(selected),
+        comments, remarks, subValues, equipValues, extraValues,
+      })
       if (!draftId) {
-        const { data: newDraft, error: ae } = await supabase
-          .from('assessments')
-          .insert({
-            user_id: user.id,
-            branch_name: branch?.name,
-            branch_id: branchId,
-            status: isDraft ? 'draft' : 'submitted',
-            form_data: JSON.stringify({
-              inspectorName,
-              inspectDate,
-              inspectTime,
-              selectedTopics: Array.from(selected),
-              comments,
-              remarks,
-              subValues,
-              equipValues,
-            }),
-          })
-          .select()
-          .single()
+        const { data: newDraft, error: ae } = await supabase.from('assessments').insert({
+          user_id: user.id, branch_name: branch?.name, branch_id: branchId,
+          status: isDraft ? 'draft' : 'submitted', form_data: formData,
+        }).select().single()
         if (ae) throw ae
         setDraftId(newDraft.id)
       } else {
-        const { error: ue } = await supabase
-          .from('assessments')
-          .update({
-            branch_name: branch?.name,
-            form_data: JSON.stringify({
-              inspectorName,
-              inspectDate,
-              inspectTime,
-              selectedTopics: Array.from(selected),
-              comments,
-              remarks,
-              subValues,
-              equipValues,
-            }),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', draftId)
+        const { error: ue } = await supabase.from('assessments').update({
+          branch_name: branch?.name, form_data: formData, updated_at: new Date().toISOString(),
+        }).eq('id', draftId)
         if (ue) throw ue
       }
-
-      setSaveStatus('saved')
-      toast.success('บันทึก Draft สำเร็จ')
+      setSaveStatus('saved'); toast.success('บันทึก Draft สำเร็จ')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err: any) {
-      setSaveStatus('idle')
-      toast.error('บันทึก Draft ไม่สำเร็จ: ' + (err.message || 'เกิดข้อผิดพลาด'))
-    } finally {
-      setIsSaving(false)
-    }
+      setSaveStatus('idle'); toast.error('บันทึก Draft ไม่สำเร็จ: ' + (err.message || 'เกิดข้อผิดพลาด'))
+    } finally { setIsSaving(false) }
   }
 
-  // ============================================================
-  // AUTO-SAVE EFFECT
-  // ============================================================
   useEffect(() => {
     if (step !== 2 || !branchId || selected.size === 0) return
-    
-    const interval = setInterval(() => {
-      saveDraft(true)
-    }, 30000) // auto-save ทุก 30 วินาที
-
+    const interval = setInterval(() => { saveDraft(true) }, 30000)
     return () => clearInterval(interval)
-  }, [step, branchId, selected, inspectorName, inspectDate, inspectTime, comments, remarks, subValues, equipValues])
+  }, [step, branchId, selected, inspectorName, inspectDate, inspectTime, comments, remarks, subValues, equipValues, extraValues])
 
   // ============================================================
   // SUBMIT
@@ -285,69 +297,66 @@ export default function AssessmentPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('ไม่พบข้อมูลผู้ใช้')
-
       const branch = branches.find(b => b.id === branchId)
-      
-      // ถ้ามี draft id ให้อัปเดต status เป็น submitted แล้วใช้ ID นั้น
+
       let assessment_id = draftId
       if (draftId) {
-        const { error: ue } = await supabase
-          .from('assessments')
-          .update({ status: 'submitted' })
-          .eq('id', draftId)
+        const { error: ue } = await supabase.from('assessments').update({ status: 'submitted' }).eq('id', draftId)
         if (ue) throw ue
       } else {
-        // สร้าง assessment ใหม่หากไม่มี draft
-        const { data: assessment, error: ae } = await supabase
-          .from('assessments')
+        const { data: assessment, error: ae } = await supabase.from('assessments')
           .insert({ user_id: user.id, branch_name: branch?.name, branch_id: branchId, status: 'submitted' })
           .select().single()
         if (ae) throw ae
         assessment_id = assessment.id
       }
 
-      // บันทึก assessment_results ส่วนการประเมินรายหัวข้อ
       for (const topicId of selected) {
-        const { data: result, error: re } = await supabase
-          .from('assessment_results')
-          .insert({
-            assessment_id: assessment_id,
-            topic_id: topicId,
-            remark: remarks[topicId] || null,
-            comment: comments[topicId] || null,
-          })
-          .select().single()
+        const { data: result, error: re } = await supabase.from('assessment_results').insert({
+          assessment_id, topic_id: topicId,
+          remark: remarks[topicId] || null,
+          comment: comments[topicId] || null,
+        }).select().single()
         if (re) throw re
 
-        // บันทึก checkbox + trip sub_items
-        const topicSubValues = subValues[topicId] || {}
-        for (const [subId, vals] of Object.entries(topicSubValues)) {
-          await supabase.from('result_sub_items').insert({
-            result_id: result.id,
-            sub_item_id: subId,
-            status: vals.status || 'normal',
-            standard_value: vals.standard_value || null,
-            measured_value: vals.measured_value || null,
-            note: vals.recommendation || null,
-          })
-        }
-
-        // บันทึก equipment_detail sub_items
         const topic = topics.find(t => t.id === topicId)
-        const equipSubItems = topic?.sub_items?.filter(s => s.type === 'equipment_detail') || []
-        const ev = equipValues[topicId]
-        if (equipSubItems.length > 0 && ev) {
-          await supabase.from('result_sub_items').insert({
-            result_id: result.id,
-            sub_item_id: equipSubItems[0].id,
-            main_circuit: ev.main_circuit || null,
-            cable_type: ev.cable_type || null,
-            phase_size: ev.phase_size || null,
-            neutral_size: ev.neutral_size || null,
-          })
+        const subItems = topic?.sub_items || []
+
+        for (const sub of subItems) {
+          if (sub.type === 'checkbox') {
+            const vals = subValues[topicId]?.[sub.id]
+            await supabase.from('result_sub_items').insert({
+              result_id: result.id, sub_item_id: sub.id,
+              status: vals?.status || 'normal',
+              standard_value: vals?.standard_value || null,
+              measured_value: vals?.measured_value || null,
+              note: vals?.recommendation || null,
+            })
+          } else if (sub.type === 'trip') {
+            const vals = subValues[topicId]?.[sub.id]
+            await supabase.from('result_sub_items').insert({
+              result_id: result.id, sub_item_id: sub.id,
+              measured_value: vals?.measured_value || null,
+            })
+          } else if (sub.type === 'equipment_detail') {
+            const ev = equipValues[topicId]
+            await supabase.from('result_sub_items').insert({
+              result_id: result.id, sub_item_id: sub.id,
+              main_circuit: ev?.main_circuit || null,
+              cable_type: ev?.cable_type || null,
+              phase_size: ev?.phase_size || null,
+              neutral_size: ev?.neutral_size || null,
+            })
+          } else {
+            // type ใหม่ทั้งหมด — เก็บใน extra_data
+            const extra = extraValues[topicId]?.[sub.id] || {}
+            await supabase.from('result_sub_items').insert({
+              result_id: result.id, sub_item_id: sub.id,
+              extra_data: Object.keys(extra).length > 0 ? extra : null,
+            })
+          }
         }
 
-        // อัปโหลดรูป
         for (const file of images[topicId] || []) {
           const path = `${user.id}/${assessment_id}/${result.id}/${Date.now()}-${file.name}`
           const { error: ue } = await supabase.storage.from('assessment-images').upload(path, file)
@@ -358,17 +367,214 @@ export default function AssessmentPage() {
       }
 
       toast.success('ส่งแบบประเมินสำเร็จ!')
-      resetForm()
-      setDraftId(null)
+      resetForm(); setDraftId(null)
     } catch (err: any) {
       toast.error(err.message || 'เกิดข้อผิดพลาด')
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   const selectedTopics = topics.filter(t => selected.has(t.id))
   const selectedBranch = branches.find(b => b.id === branchId)
+
+  // ============================================================
+  // RENDER SUB-ITEMS ตาม type
+  // ============================================================
+  const renderSubItem = (t: Topic, sub: SubItem) => {
+    const tid = t.id
+    const sid = sub.id
+
+    if (sub.type === 'door') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🚪 เลือกประเภทประตู</div>
+        <BoolCheckField label="ประตูสำนักงาน" value={getExtra(tid, sid, 'office_door')} onChange={v => updateExtra(tid, sid, 'office_door', v)} />
+        <BoolCheckField label="ประตูหนีไฟ" value={getExtra(tid, sid, 'fire_door')} onChange={v => updateExtra(tid, sid, 'fire_door', v)} />
+      </div>
+    )
+
+    if (sub.type === 'door_inspection') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🚪 การตรวจประตู — {sub.label}</div>
+        <CheckboxStatusField label="ตรวจสอบฐานล่างประตู" fieldKey={`${sid}-bottom`} value={getExtra(tid, sid, 'bottom_base_check')} onChange={v => updateExtra(tid, sid, 'bottom_base_check', v)} />
+        <CheckboxStatusField label="ตรวจสอบเสาข้างประตู" fieldKey={`${sid}-post`} value={getExtra(tid, sid, 'side_post_check')} onChange={v => updateExtra(tid, sid, 'side_post_check', v)} />
+        <CheckboxStatusField label="ตรวจสอบบานพับประตู" fieldKey={`${sid}-hinge`} value={getExtra(tid, sid, 'hinge_check')} onChange={v => updateExtra(tid, sid, 'hinge_check', v)} />
+        <CheckboxStatusField label="ตรวจสอบโช๊คประตูหนีไฟ" fieldKey={`${sid}-closer`} value={getExtra(tid, sid, 'door_closer_check')} onChange={v => updateExtra(tid, sid, 'door_closer_check', v)} />
+        <CheckboxStatusField label="ตรวจสอบคานผลักประตู" fieldKey={`${sid}-bar`} value={getExtra(tid, sid, 'push_bar_check')} onChange={v => updateExtra(tid, sid, 'push_bar_check', v)} />
+        <CheckboxStatusField label="ทำความสะอาด" fieldKey={`${sid}-clean`} value={getExtra(tid, sid, 'cleaning_check')} onChange={v => updateExtra(tid, sid, 'cleaning_check', v)} passLabel="ผ่าน" failLabel="ไม่ผ่าน" />
+        <div className="mt-2">
+          <label className="text-xs text-gray-600">คำแนะนำและการแก้ไข</label>
+          <textarea value={getExtra(tid, sid, 'recommendation')} onChange={e => updateExtra(tid, sid, 'recommendation', e.target.value)}
+            rows={2} placeholder="คำแนะนำ..." className="w-full mt-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 resize-none" />
+        </div>
+      </div>
+    )
+
+    if (sub.type === 'socket_inspection') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🔌 การตรวจเต้ารับไฟฟ้า — {sub.label}</div>
+        <CheckboxStatusField label="ตรวจสอบสภาพเต้ารับ" fieldKey={`${sid}-sc`} value={getExtra(tid, sid, 'socket_condition_check')} onChange={v => updateExtra(tid, sid, 'socket_condition_check', v)} />
+        <CheckboxStatusField label="ตรวจสอบสภาพบล็อคยึดเต้ารับ" fieldKey={`${sid}-bf`} value={getExtra(tid, sid, 'box_fixing_check')} onChange={v => updateExtra(tid, sid, 'box_fixing_check', v)} />
+        <CheckboxStatusField label="ตรวจสอบสภาพสายไฟก่อนเข้าเต้ารับ" fieldKey={`${sid}-ws`} value={getExtra(tid, sid, 'wire_before_socket_check')} onChange={v => updateExtra(tid, sid, 'wire_before_socket_check', v)} />
+        <CheckboxStatusField label="ตรวจสอบจุดเชื่อมต่อบล็อคและท่อร้อยสาย" fieldKey={`${sid}-cj`} value={getExtra(tid, sid, 'conduit_joint_check')} onChange={v => updateExtra(tid, sid, 'conduit_joint_check', v)} />
+        <CheckboxStatusField label="ตรวจสอบสายดิน" fieldKey={`${sid}-gw`} value={getExtra(tid, sid, 'ground_wire_check')} onChange={v => updateExtra(tid, sid, 'ground_wire_check', v)} />
+        <CheckboxStatusField label="ทำความสะอาด" fieldKey={`${sid}-cl`} value={getExtra(tid, sid, 'cleaning_check')} onChange={v => updateExtra(tid, sid, 'cleaning_check', v)} passLabel="ผ่าน" failLabel="ไม่ผ่าน" />
+        <div className="mt-2">
+          <label className="text-xs text-gray-600">คำแนะนำและการแก้ไข</label>
+          <textarea value={getExtra(tid, sid, 'recommendation')} onChange={e => updateExtra(tid, sid, 'recommendation', e.target.value)}
+            rows={2} placeholder="คำแนะนำ..." className="w-full mt-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 resize-none" />
+        </div>
+      </div>
+    )
+
+    if (sub.type === 'sanitary_inspection') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🚿 การตรวจสุขภัณฑ์ — {sub.label}</div>
+        <CheckboxStatusField label="ตรวจสอบสภาพสุขภัณฑ์" fieldKey={`${sid}-san`} value={getExtra(tid, sid, 'sanitary_condition_check')} onChange={v => updateExtra(tid, sid, 'sanitary_condition_check', v)} />
+        <CheckboxStatusField label="ฟลัชวาล์ว" fieldKey={`${sid}-fv`} value={getExtra(tid, sid, 'flush_valve_check')} onChange={v => updateExtra(tid, sid, 'flush_valve_check', v)} />
+        <CheckboxStatusField label="ข้อต่อท่อน้ำดี" fieldKey={`${sid}-ij`} value={getExtra(tid, sid, 'inlet_joint_check')} onChange={v => updateExtra(tid, sid, 'inlet_joint_check', v)} />
+        <CheckboxStatusField label="รอยรั่วซึมและยางกันซึม" fieldKey={`${sid}-lw`} value={getExtra(tid, sid, 'leakage_and_washer_check')} onChange={v => updateExtra(tid, sid, 'leakage_and_washer_check', v)} />
+        <CheckboxStatusField label="การทำงานของลูกลอย" fieldKey={`${sid}-fv2`} value={getExtra(tid, sid, 'float_valve_check')} onChange={v => updateExtra(tid, sid, 'float_valve_check', v)} />
+        <CheckboxStatusField label="ถังเก็บน้ำและยาแนว" fieldKey={`${sid}-wt`} value={getExtra(tid, sid, 'water_tank_grout_check')} onChange={v => updateExtra(tid, sid, 'water_tank_grout_check', v)} />
+        <CheckboxStatusField label="การไหลของน้ำในระบบ" fieldKey={`${sid}-wf`} value={getExtra(tid, sid, 'water_flow_check')} onChange={v => updateExtra(tid, sid, 'water_flow_check', v)} />
+        <CheckboxStatusField label="กลิ่นบริเวณรอบๆ" fieldKey={`${sid}-od`} value={getExtra(tid, sid, 'odor_check')} onChange={v => updateExtra(tid, sid, 'odor_check', v)} passLabel="มีกลิ่น" failLabel="ไม่มีกลิ่น" />
+        <CheckboxStatusField label="การยึดและทดสอบความแข็งแรง" fieldKey={`${sid}-st`} value={getExtra(tid, sid, 'stability_test_check')} onChange={v => updateExtra(tid, sid, 'stability_test_check', v)} />
+        <div className="mt-2">
+          <label className="text-xs text-gray-600">คำแนะนำและการแก้ไข</label>
+          <textarea value={getExtra(tid, sid, 'recommendation')} onChange={e => updateExtra(tid, sid, 'recommendation', e.target.value)}
+            rows={2} placeholder="คำแนะนำ..." className="w-full mt-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 resize-none" />
+        </div>
+      </div>
+    )
+
+    if (sub.type === 'emergency_inspection') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🔦 การตรวจ Emergency — {sub.label}</div>
+        <div className="bg-blue-50 rounded-lg p-2 mb-2">
+          <div className="text-xs font-medium text-blue-600 mb-1">ข้อมูล Setup</div>
+          <div className="text-xs text-gray-600">อุปกรณ์: <span className="font-medium text-gray-900">{sub.extra_data?.['อุปกรณ์'] || '-'}</span></div>
+        </div>
+        <MeasuredField label="แหล่งจ่ายไฟ AC Emergency Light (220V)" value={getExtra(tid, sid, 'ac_power_voltage')} onChange={v => updateExtra(tid, sid, 'ac_power_voltage', v)} />
+        <CheckboxStatusField label="สภาวะการ Charging (หลอดดับ/กระพริบ)" fieldKey={`${sid}-cs`} value={getExtra(tid, sid, 'dc_charging_status_check')} onChange={v => updateExtra(tid, sid, 'dc_charging_status_check', v)} />
+        <CheckboxStatusField label="ค่าที่ Charging ได้ (หลอดแสดง Full)" fieldKey={`${sid}-cf`} value={getExtra(tid, sid, 'dc_charging_full_check')} onChange={v => updateExtra(tid, sid, 'dc_charging_full_check', v)} />
+        <CheckboxStatusField label="Test Battery ไปหลอด 5 วินาที (หลอดสว่าง)" fieldKey={`${sid}-bt`} value={getExtra(tid, sid, 'battery_test_5s_check')} onChange={v => updateExtra(tid, sid, 'battery_test_5s_check', v)} />
+        <CheckboxStatusField label="สภาพการชำรุด/LED" fieldKey={`${sid}-led`} value={getExtra(tid, sid, 'led_condition_check')} onChange={v => updateExtra(tid, sid, 'led_condition_check', v)} />
+        <CheckboxStatusField label="สภาพการชำรุด/ฟิวส์" fieldKey={`${sid}-fuse`} value={getExtra(tid, sid, 'fuse_condition_check')} onChange={v => updateExtra(tid, sid, 'fuse_condition_check', v)} />
+        <CheckboxStatusField label="สภาพการชำรุด/หลอดไฟ" fieldKey={`${sid}-lamp`} value={getExtra(tid, sid, 'lamp_condition_check')} onChange={v => updateExtra(tid, sid, 'lamp_condition_check', v)} />
+        <CheckboxStatusField label="ทดสอบการเปิดต่อเนื่อง 90 นาที (หลอดสว่าง)" fieldKey={`${sid}-90`} value={getExtra(tid, sid, 'test_90mins_check')} onChange={v => updateExtra(tid, sid, 'test_90mins_check', v)} />
+        <div className="mt-2">
+          <label className="text-xs text-gray-600">คำแนะนำและแนวทางแก้ไข</label>
+          <textarea value={getExtra(tid, sid, 'recommendation')} onChange={e => updateExtra(tid, sid, 'recommendation', e.target.value)}
+            rows={2} placeholder="คำแนะนำ..." className="w-full mt-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 resize-none" />
+        </div>
+      </div>
+    )
+
+    if (sub.type === 'lighting_inspection') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">💡 การตรวจแสงสว่าง — {sub.label}</div>
+        <div className="bg-blue-50 rounded-lg p-2 mb-2">
+          <div className="text-xs font-medium text-blue-600 mb-1">ข้อมูล Setup</div>
+          <div className="text-xs text-gray-600">ชนิดโคมไฟ: <span className="font-medium text-gray-900">{sub.extra_data?.['ชนิดโคมไฟ'] || '-'}</span></div>
+        </div>
+        <CheckboxStatusField label="สภาพความสมบูรณ์ของโคมไฟฟ้า" fieldKey={`${sid}-fc`} value={getExtra(tid, sid, 'fixture_condition_check')} onChange={v => updateExtra(tid, sid, 'fixture_condition_check', v)} />
+        <CheckboxStatusField label="ขั้วรับหลอด" fieldKey={`${sid}-sk`} value={getExtra(tid, sid, 'socket_condition_check')} onChange={v => updateExtra(tid, sid, 'socket_condition_check', v)} />
+        <CheckboxStatusField label="สภาพหลอดไฟฟ้า" fieldKey={`${sid}-lc`} value={getExtra(tid, sid, 'lamp_condition_check')} onChange={v => updateExtra(tid, sid, 'lamp_condition_check', v)} />
+        <CheckboxStatusField label="บล็อคและสวิตช์ควบคุมโคมไฟ" fieldKey={`${sid}-sw`} value={getExtra(tid, sid, 'switch_control_check')} onChange={v => updateExtra(tid, sid, 'switch_control_check', v)} />
+        <CheckboxStatusField label="การติดตั้งโคมไฟ" fieldKey={`${sid}-ins`} value={getExtra(tid, sid, 'installation_check')} onChange={v => updateExtra(tid, sid, 'installation_check', v)} />
+        <CheckboxStatusField label="ค่าความสว่างภายในห้อง" fieldKey={`${sid}-lux`} value={getExtra(tid, sid, 'lux_level_check')} onChange={v => updateExtra(tid, sid, 'lux_level_check', v)} />
+        <div className="mt-2">
+          <label className="text-xs text-gray-600">คำแนะนำและการแก้ไข</label>
+          <textarea value={getExtra(tid, sid, 'recommendation')} onChange={e => updateExtra(tid, sid, 'recommendation', e.target.value)}
+            rows={2} placeholder="คำแนะนำ..." className="w-full mt-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 resize-none" />
+        </div>
+      </div>
+    )
+
+    if (sub.type === 'fan') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🌀 เลือกประเภทพัดลม</div>
+        <BoolCheckField label="พัดลมโคจร" value={getExtra(tid, sid, 'orbit_fan')} onChange={v => updateExtra(tid, sid, 'orbit_fan', v)} />
+        <BoolCheckField label="พัดลมติดผนัง" value={getExtra(tid, sid, 'wall_fan')} onChange={v => updateExtra(tid, sid, 'wall_fan', v)} />
+        <BoolCheckField label="พัดลมระบายอากาศ" value={getExtra(tid, sid, 'exhaust_fan')} onChange={v => updateExtra(tid, sid, 'exhaust_fan', v)} />
+      </div>
+    )
+
+    if (sub.type === 'fan_inspection') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🌀 การตรวจพัดลม — {sub.label}</div>
+        <div className="bg-blue-50 rounded-lg p-2 mb-2">
+          <div className="text-xs font-medium text-blue-600 mb-1">ข้อมูล Setup</div>
+          <div className="text-xs text-gray-600">อุปกรณ์: <span className="font-medium text-gray-900">{sub.extra_data?.['อุปกรณ์'] || '-'}</span></div>
+          <div className="text-xs text-gray-600">หมายเลขเครื่อง: <span className="font-medium text-gray-900">{sub.extra_data?.['หมายเลขเครื่อง'] || '-'}</span></div>
+        </div>
+        <MeasuredField label="กระแสมอเตอร์ (A)" value={getExtra(tid, sid, 'motor_current')} onChange={v => updateExtra(tid, sid, 'motor_current', v)} />
+        <MeasuredField label="แรงดันไฟฟ้า (220/380) (V)" value={getExtra(tid, sid, 'voltage')} onChange={v => updateExtra(tid, sid, 'voltage', v)} />
+        <CheckboxStatusField label="การทำงานของพัดลม" fieldKey={`${sid}-fo`} value={getExtra(tid, sid, 'fan_operation_check')} onChange={v => updateExtra(tid, sid, 'fan_operation_check', v)} />
+        <CheckboxStatusField label="สภาพสายไฟและใบพัดลม" fieldKey={`${sid}-wb`} value={getExtra(tid, sid, 'wiring_and_blade_check')} onChange={v => updateExtra(tid, sid, 'wiring_and_blade_check', v)} />
+        <CheckboxStatusField label="การสั่นสะเทือนของมอเตอร์" fieldKey={`${sid}-mv`} value={getExtra(tid, sid, 'motor_vibration_check')} onChange={v => updateExtra(tid, sid, 'motor_vibration_check', v)} />
+        <CheckboxStatusField label="ไขน็อตให้แน่นและทำความสะอาด" fieldKey={`${sid}-tc`} value={getExtra(tid, sid, 'tightening_and_cleaning_check')} onChange={v => updateExtra(tid, sid, 'tightening_and_cleaning_check', v)} passLabel="ผ่าน" failLabel="ไม่ผ่าน" />
+        <div className="mt-2">
+          <label className="text-xs text-gray-600">คำแนะนำและการแก้ไข</label>
+          <textarea value={getExtra(tid, sid, 'recommendation')} onChange={e => updateExtra(tid, sid, 'recommendation', e.target.value)}
+            rows={2} placeholder="คำแนะนำ..." className="w-full mt-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 resize-none" />
+        </div>
+      </div>
+    )
+
+    if (sub.type === 'fire_extinguisher_inspection') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🧯 การตรวจถังดับเพลิง — {sub.label}</div>
+        <div className="bg-blue-50 rounded-lg p-2 mb-2">
+          <div className="text-xs font-medium text-blue-600 mb-1">ข้อมูล Setup</div>
+          <div className="text-xs text-gray-600">หมายเลขถัง: <span className="font-medium text-gray-900">{sub.extra_data?.['หมายเลขถัง'] || '-'}</span></div>
+          <div className="text-xs text-gray-600">ประเภท: <span className="font-medium text-gray-900">{sub.extra_data?.['ประเภท'] || '-'}</span></div>
+          <div className="text-xs text-gray-600">ขนาด: <span className="font-medium text-gray-900">{sub.extra_data?.['ขนาด'] || '-'}</span></div>
+        </div>
+        <CheckboxStatusField label="สายฉีด" fieldKey={`${sid}-hose`} value={getExtra(tid, sid, 'hose_check')} onChange={v => updateExtra(tid, sid, 'hose_check', v)} />
+        <CheckboxStatusField label="คันบังคับ" fieldKey={`${sid}-lev`} value={getExtra(tid, sid, 'lever_check')} onChange={v => updateExtra(tid, sid, 'lever_check', v)} />
+        <CheckboxStatusField label="ตัวถัง" fieldKey={`${sid}-cyl`} value={getExtra(tid, sid, 'cylinder_check')} onChange={v => updateExtra(tid, sid, 'cylinder_check', v)} />
+        <CheckboxStatusField label="เกจความดัน/น้ำหนัก" fieldKey={`${sid}-pg`} value={getExtra(tid, sid, 'pressure_gauge_weight_check')} onChange={v => updateExtra(tid, sid, 'pressure_gauge_weight_check', v)} />
+        <CheckboxStatusField label="สิ่งกีดขวาง" fieldKey={`${sid}-obs`} value={getExtra(tid, sid, 'obstruction_check')} onChange={v => updateExtra(tid, sid, 'obstruction_check', v)} />
+        <div className="mt-2">
+          <label className="text-xs text-gray-600">คำแนะนำและการแก้ไข</label>
+          <textarea value={getExtra(tid, sid, 'recommendation')} onChange={e => updateExtra(tid, sid, 'recommendation', e.target.value)}
+            rows={2} placeholder="คำแนะนำ..." className="w-full mt-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 resize-none" />
+        </div>
+      </div>
+    )
+
+    if (sub.type === 'exit_sign') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🚨 เลือกประเภทป้าย</div>
+        <BoolCheckField label="ตู้ไฟแสงสว่างฉุกเฉิน" value={getExtra(tid, sid, 'emergency_light_box')} onChange={v => updateExtra(tid, sid, 'emergency_light_box', v)} />
+        <BoolCheckField label="ป้ายบอกทางหนีไฟ" value={getExtra(tid, sid, 'exit_sign_board')} onChange={v => updateExtra(tid, sid, 'exit_sign_board', v)} />
+      </div>
+    )
+
+    if (sub.type === 'exit_sign_inspection') return (
+      <div key={sid} className="border border-gray-100 rounded-xl p-3 mb-3">
+        <div className="text-xs font-medium text-gray-600 mb-2">🚨 การตรวจ Emergency/Exit Sign — {sub.label}</div>
+        <div className="bg-blue-50 rounded-lg p-2 mb-2">
+          <div className="text-xs font-medium text-blue-600 mb-1">ข้อมูล Setup</div>
+          <div className="text-xs text-gray-600">อุปกรณ์: <span className="font-medium text-gray-900">{sub.extra_data?.['อุปกรณ์'] || '-'}</span></div>
+        </div>
+        <MeasuredField label="แหล่งจ่ายไฟ AC Emergency Light (220V)" value={getExtra(tid, sid, 'ac_power_voltage')} onChange={v => updateExtra(tid, sid, 'ac_power_voltage', v)} />
+        <CheckboxStatusField label="สภาวะการ Charging (หลอดดับ/กระพริบ)" fieldKey={`${sid}-cs`} value={getExtra(tid, sid, 'charging_status_check')} onChange={v => updateExtra(tid, sid, 'charging_status_check', v)} />
+        <CheckboxStatusField label="ค่าที่ Charging ได้ (หลอดแสดง Full)" fieldKey={`${sid}-cf`} value={getExtra(tid, sid, 'charging_full_check')} onChange={v => updateExtra(tid, sid, 'charging_full_check', v)} />
+        <CheckboxStatusField label="Test Battery ไปหลอด 5 วินาที (หลอดสว่าง)" fieldKey={`${sid}-bt`} value={getExtra(tid, sid, 'battery_test_5s_check')} onChange={v => updateExtra(tid, sid, 'battery_test_5s_check', v)} />
+        <CheckboxStatusField label="LED" fieldKey={`${sid}-led`} value={getExtra(tid, sid, 'led_check')} onChange={v => updateExtra(tid, sid, 'led_check', v)} />
+        <CheckboxStatusField label="ฟิวส์" fieldKey={`${sid}-fuse`} value={getExtra(tid, sid, 'fuse_check')} onChange={v => updateExtra(tid, sid, 'fuse_check', v)} />
+        <CheckboxStatusField label="หลอดไฟ" fieldKey={`${sid}-lamp`} value={getExtra(tid, sid, 'lamp_check')} onChange={v => updateExtra(tid, sid, 'lamp_check', v)} />
+        <CheckboxStatusField label="ทดสอบการเปิดต่อเนื่อง 90 นาที (หลอดสว่าง)" fieldKey={`${sid}-90`} value={getExtra(tid, sid, 'test_90mins_check')} onChange={v => updateExtra(tid, sid, 'test_90mins_check', v)} />
+        <div className="mt-2">
+          <label className="text-xs text-gray-600">คำแนะนำและการแก้ไข</label>
+          <textarea value={getExtra(tid, sid, 'recommendation')} onChange={e => updateExtra(tid, sid, 'recommendation', e.target.value)}
+            rows={2} placeholder="คำแนะนำ..." className="w-full mt-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 resize-none" />
+        </div>
+      </div>
+    )
+
+    return null
+  }
 
   // ============================================================
   // RENDER
@@ -436,6 +642,7 @@ export default function AssessmentPage() {
                         {config && (
                           <div className="flex gap-3 mt-1">
                             {config.equipment_no && <span className="text-xs text-gray-500">🔧 {config.equipment_no}</span>}
+                            {config.building && <span className="text-xs text-gray-500">🏢 {config.building}</span>}
                             {config.location && <span className="text-xs text-gray-500">📍 {config.location}</span>}
                           </div>
                         )}
@@ -468,6 +675,9 @@ export default function AssessmentPage() {
               const checkboxItems = t.sub_items?.filter(s => s.type === 'checkbox') || []
               const tripItems = t.sub_items?.filter(s => s.type === 'trip') || []
               const equipItems = t.sub_items?.filter(s => s.type === 'equipment_detail') || []
+              const newTypeItems = t.sub_items?.filter(s =>
+                !['checkbox', 'trip', 'equipment_detail'].includes(s.type)
+              ) || []
 
               return (
                 <div key={t.id} className="bg-white rounded-2xl border border-gray-100 p-4">
@@ -492,13 +702,10 @@ export default function AssessmentPage() {
                         ].map(({ field, label }) => (
                           <div key={field} className="flex items-center gap-3">
                             <label className="text-xs text-gray-600 w-40 flex-shrink-0">{label}</label>
-                            <input
-                              type="text"
-                              value={equipValues[t.id]?.[field] || ''}
+                            <input type="text" value={equipValues[t.id]?.[field] || ''}
                               onChange={e => updateEquipValue(t.id, field, e.target.value)}
                               placeholder="กรอกข้อมูล"
-                              className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400"
-                            />
+                              className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
                           </div>
                         ))}
                       </div>
@@ -557,7 +764,7 @@ export default function AssessmentPage() {
                     </div>
                   )}
 
-                  {/* ── TRIP (แรงดันไฟฟ้า) sub-items ── */}
+                  {/* ── TRIP ── */}
                   {tripItems.length > 0 && (
                     <div className="mb-4">
                       <div className="text-xs font-medium text-gray-600 mb-2">⚡ รายละเอียด (แรงดันไฟฟ้า)</div>
@@ -576,6 +783,15 @@ export default function AssessmentPage() {
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* ── NEW TYPES ── */}
+                  {newTypeItems.length > 0 && (
+                    <div className="mb-4">
+                      {newTypeItems
+                        .sort((a, b) => a.sort_order - b.sort_order)
+                        .map(sub => renderSubItem(t, sub))}
                     </div>
                   )}
 
@@ -628,16 +844,15 @@ export default function AssessmentPage() {
               )
             })}
           </div>
+
           <div className="flex gap-2">
             <button onClick={() => setStep(1)} className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2.5 text-sm">← ย้อนกลับ</button>
             <button onClick={() => saveDraft(true)} disabled={isSaving}
               className={`flex-1 border rounded-xl py-2.5 text-sm font-medium transition-all
-                ${saveStatus === 'saving' ? 'border-blue-400 bg-blue-50 text-blue-600' : 
-                  saveStatus === 'saved' ? 'border-green-400 bg-green-50 text-green-600' : 
+                ${saveStatus === 'saving' ? 'border-blue-400 bg-blue-50 text-blue-600' :
+                  saveStatus === 'saved' ? 'border-green-400 bg-green-50 text-green-600' :
                   'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-              {saveStatus === 'saving' ? '💾 กำลังบันทึก...' : 
-               saveStatus === 'saved' ? '✓ บันทึกแล้ว' : 
-               '💾 บันทึก Draft'}
+              {saveStatus === 'saving' ? '💾 กำลังบันทึก...' : saveStatus === 'saved' ? '✓ บันทึกแล้ว' : '💾 บันทึก Draft'}
             </button>
             <button onClick={() => setStep(3)} className="flex-1 bg-blue-600 text-white rounded-xl py-2.5 text-sm font-medium">ถัดไป →</button>
           </div>
